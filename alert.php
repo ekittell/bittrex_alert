@@ -9,31 +9,31 @@ Class BittrexAlerts {
 	private $identitifier = "BITTREX-ALERT"; // use to identify messages for smart mail boxes
 	private $headers;
 
-	private $lt_alerts = array(
-		"BTC-RZR" 		=> .00033000,
-		"BTC-VIA"	 	=> .00032000
-	);
+	private $alerts = array(
+		//bitrrex
+		"BTC-AERO" 		=> array(.00004200,.00005000),
+		// c-cex
+		"dcn-btc"		=> array(.00000200, .00000200)
+	); 
 
-	private $gt_alerts = array(
-		"BTC-JBS" 		=> .00010000,
-		"BTC-VIA" 		=> .00040000,
-		"BTC-RZR" 		=> .00040000
-	);
+
 
 	private $log = array();
 	private $log_file;
 
 	public function __construct() {
+		// create log file with empty array
 		$this->log_file = dirname(__FILE__) . "/alerts.log";
 
-		// create log file with empty array
 		if(!file_exists($this->log_file))
 			file_put_contents($this->log_file, serialize(array())) or die("can't create file");
 
 		$this->log = unserialize(file_get_contents($this->log_file));
 
-		$this->headers = 'From: alerts@yourdomain.com' . "\r\n" .
-	    'X-Mailer: PHP/' . phpversion();
+		$this->headers = 'From: your@server.com' . "\r\n" .
+	    		'X-Mailer: PHP/' . phpversion();
+
+
 
 	}
 
@@ -44,7 +44,7 @@ Class BittrexAlerts {
 	}
 
 	private function log_alert($alert_name, $repeat = true) {
-		// if last alert was over an hour ago then log alert and return true 
+		// log alert and return true if last alert was over an hour ago
 		$limit = time() - (60 * 60);
 		if(!isset($this->log[$alert_name]) || ($this->log[$alert_name] < $limit && $repeat)) {
 			$this->log[$alert_name] = time();
@@ -56,37 +56,75 @@ Class BittrexAlerts {
 	}
 
 	public function run() {
-		// to avoid calling array_keys too many times in the loop
-		$lt_markets = array_keys($this->lt_alerts); 
-		$gt_markets = array_keys($this->gt_alerts); 
+		$markets = array();
+		$lt_alerts = array();
+		$gt_alerts = array();
 
-		$summaries = json_decode(file_get_contents('https://bittrex.com/api/v1.1/public/getmarketsummaries')); // BITTREX API call
+		foreach($this->alerts as $market => $alert) {
+			$markets[] = $market;
+	    	$lt_alerts[$market] = $alert[0];
+	    	$gt_alerts[$market] = $alert[1];
+	    }
 
-		foreach($summaries->result as $summary) {
+
+		$bittrex_summaries = json_decode(file_get_contents('https://bittrex.com/api/v1.1/public/getmarketsummaries')); // BITTREX API call
+
+		foreach($bittrex_summaries->result as $summary) {
 			// Check for new Markets
 			$limit = time() - (60 * 60);
 			if(strtotime($summary->Created) >= $limit) {
+				echo $summary->Created . "<br>";
 				$subject = "NEW market!";
 				$message = $summary->MarketName;
 				if($this->log_alert("NEW-".$summary->MarketName, false))
 					$this->send_alert($subject, $message);
 			}
 
-			// Check if markets have dropped below alert points
-			if(in_array($summary->MarketName, $lt_markets) && $summary->Last <= $this->lt_alerts[$summary->MarketName]) {
-				$subject = "market LOW!";
-				$message = $summary->MarketName ." at " . number_format($summary->Last, 8);
-				if($this->log_alert("LOW-".$summary->MarketName))
-					$this->send_alert($subject, $message);
+			if(in_array($summary->MarketName, $markets)) {
+				// Check if markets have droppped below alert points
+				if($summary->Last <= $lt_alerts[$summary->MarketName]) {
+					$subject = "market LOW!";
+					$message = $summary->MarketName ." at " . number_format($summary->Last, 8);
+					if($this->log_alert("LOW-".$summary->MarketName))
+						$this->send_alert($subject, $message);
+				}
+
+				// Check if markets have gone above alert points
+				if($summary->Last >= $gt_alerts[$summary->MarketName]) {
+					$subject = "market HI!";
+					$message = $summary->MarketName ." at " . number_format($summary->Last, 8);
+					if($this->log_alert("HI-".$summary->MarketName))
+						$this->send_alert($subject, $message);
+				}
+
 			}
 
-			// Check if markets have gone above alert points
-			if(in_array($summary->MarketName, $gt_markets) && $summary->Last >= $this->gt_alerts[$summary->MarketName]) {
-				$subject = "market HI!";
-				$message = $summary->MarketName ." at " . number_format($summary->Last, 8);
-				if($this->log_alert("HI-".$summary->MarketName))
-					$this->send_alert($subject, $message);
+
+		}
+
+		$ccex_summaries = json_decode(file_get_contents('https://c-cex.com/t/prices.json')); // C-CEX API call
+
+
+		foreach($ccex_summaries as $name => $summary) {
+
+			if(in_array($name, $markets)) {
+				// Check if markets have droppped below alert points
+				if($summary->lastprice <= $lt_alerts[$name]) {
+					$subject = "market LOW!";
+					$message = $name ." at " . number_format($summary->lastprice, 8);
+					if($this->log_alert("LOW-".$name))
+						$this->send_alert($subject, $message);
+				}
+
+				// Check if markets have gone above alert points
+				if($summary->lastprice >= $gt_alerts[$name]) {
+					$subject = "market HI!";
+					$message = $name ." at " . number_format($summary->lastprice, 8);
+					if($this->log_alert("HI-".$name))
+						$this->send_alert($subject, $message);
+				}
 			}
+
 		}
 	}
 
