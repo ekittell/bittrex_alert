@@ -5,12 +5,12 @@ $BittrexAlerts->run();
 
 Class BittrexAlerts {
 	private $sms = "2125551212@txt.att.net"; //check with your mobile carrier
-	private $email = "your@email.com";
+	private $email = "your@email.com"; // alert sent to
+	private $from_email = "your@domain.com"; // from address for all alerts
 	private $identitifier = "BITTREX-ALERT"; // use to identify messages for smart mail boxes
-	private $headers;
 
 	private $alerts = array(
-		//bitrrex
+		//bittrex
 		"BTC-AERO" 		=> array(.00004200,.00005000),
 		// c-cex
 		"dcn-btc"		=> array(.00000200, .00000200)
@@ -28,19 +28,19 @@ Class BittrexAlerts {
 		if(!file_exists($this->log_file))
 			file_put_contents($this->log_file, serialize(array())) or die("can't create file");
 
+		// load current log
 		$this->log = unserialize(file_get_contents($this->log_file));
-
-		$this->headers = 'From: your@server.com' . "\r\n" .
-	    		'X-Mailer: PHP/' . phpversion();
-
-
 
 	}
 
 	private function send_alert($subject, $message) {
+		$headers = 'From: ' . $this->from_email . "\r\n" .
+	    	'X-Mailer: PHP/' . phpversion();
+
 		$subject = $this->identitifier . " : " . $subject;
-		mail($this->sms, $subject, $message, $this->headers) or die('cannot send sms');
-		mail($this->email, $subject, $message, $this->headers) or die('cannot send mail');
+
+		mail($this->sms, $subject, $message, $headers) or die('cannot send sms');
+		mail($this->email, $subject, $message, $headers) or die('cannot send mail');
 	}
 
 	private function log_alert($alert_name, $repeat = true) {
